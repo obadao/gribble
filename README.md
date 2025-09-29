@@ -9,8 +9,8 @@ A real-time terminal-based system monitor built with Rust and ratatui. Gribble p
 - **System Monitoring**: Real-time CPU usage with progress bars, memory statistics, system uptime, and architecture details
 - **Process Management**: Interactive process viewer with CPU and memory usage, sortable by resource consumption
 - **File Explorer**: Navigate filesystem with keyboard controls, directory traversal with visual indicators
-- **Network Traffic**: Live network monitoring with sparkline graphs showing download/upload rates and totals
-- **Keyboard Navigation**: Vim-style navigation (hjkl) plus arrow keys for intuitive control
+- **Network Traffic**: Live network monitoring with sparkline graphs, cycle through multiple network interfaces
+- **Keyboard Navigation**: Vim-style navigation (hjkl) plus arrow keys, page navigation (PgUp/PgDn), and jump keys (Home/End)
 
 ## Installation
 
@@ -38,7 +38,9 @@ cargo run
 ### Navigation
 
 - `←→` or `h l` - Switch between panels  
-- `↑↓` or `j k` - Navigate within Process Manager and File Explorer
+- `↑↓` or `j k` - Navigate within lists, cycle network interfaces
+- `PgUp/PgDn` - Jump by page in lists
+- `Home/End` - Jump to first/last item in lists
 - `Enter` - Open directories in File Explorer
 - `r` - Refresh all data
 - `?` - Show/hide help
@@ -48,9 +50,9 @@ cargo run
 
 1. **System Monitor** - CPU usage with visual bars, memory statistics, process count, system information
 2. **System Status** - Current time/date, disk usage, network interface statistics, system load
-3. **Process Manager** - Live process list sorted by CPU usage, shows memory consumption, navigable selection
-4. **File Explorer** - Directory browser with folder/file icons, supports navigation up and into directories
-5. **Network Graph** - Real-time network traffic visualization with separate RX/TX sparkline graphs
+3. **Process Manager** - Live process list sorted by CPU usage, full navigation support
+4. **File Explorer** - Directory browser with folder/file icons, full navigation support
+5. **Network Graph** - Real-time network traffic with interface cycling, separate RX/TX sparkline graphs
 
 ## Technical Details
 

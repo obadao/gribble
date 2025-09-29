@@ -25,6 +25,7 @@ struct App {
     dir_entries: Vec<String>,
     selected_process: usize,
     selected_file: usize,
+    selected_network: usize,
     show_help: bool,
     process_list_state: ListState,
     file_list_state: ListState,
@@ -39,6 +40,7 @@ struct NetworkHistory {
     last_rx_bytes: u64,
     last_tx_bytes: u64,
     max_history: usize,
+    current_interface: String,
 }
 
 impl NetworkHistory {
@@ -51,14 +53,31 @@ impl NetworkHistory {
             last_rx_bytes: 0,
             last_tx_bytes: 0,
             max_history: 60, // Keep 60 data points (2 minutes at 2-second intervals)
+            current_interface: String::new(),
         }
     }
 
-    fn update(&mut self, networks: &Networks) {
-        let (total_rx, total_tx) = networks.list().iter()
-            .fold((0, 0), |(rx_acc, tx_acc), (_, network)| {
-                (rx_acc + network.total_received(), tx_acc + network.total_transmitted())
-            });
+    fn update(&mut self, networks: &Networks, selected_interface: &str) {
+        // Find the selected network interface or use the first available one
+        let network_list: Vec<_> = networks.list().iter().collect();
+        let (interface_name, network_data) = if let Some(item) = network_list.get(0) {
+            // If we have a specific interface selected, try to find it
+            if !selected_interface.is_empty() {
+                network_list.iter()
+                    .find(|(name, _)| *name == selected_interface)
+                    .unwrap_or(item)
+            } else {
+                item
+            }
+        } else {
+            return; // No network interfaces available
+        };
+
+        // Update current interface name
+        self.current_interface = interface_name.to_string();
+
+        let total_rx = network_data.total_received();
+        let total_tx = network_data.total_transmitted();
 
         if self.last_rx_bytes > 0 && self.last_tx_bytes > 0 {
             // Calculate rate (bytes per 2 seconds)
@@ -132,6 +151,7 @@ impl App {
             dir_entries,
             selected_process: 0,
             selected_file: 0,
+            selected_network: 0,
             show_help: false,
             process_list_state,
             file_list_state,
@@ -171,7 +191,16 @@ impl App {
             self.system.refresh_all();
             self.disks.refresh(true);
             self.networks.refresh(true);
-            self.network_history.update(&self.networks);
+            
+            // Get the selected network interface name
+            let network_list: Vec<_> = self.networks.list().iter().collect();
+            let selected_interface_name = if let Some((name, _)) = network_list.get(self.selected_network) {
+                name.to_string()
+            } else {
+                String::new()
+            };
+            
+            self.network_history.update(&self.networks, &selected_interface_name);
             self.last_update = Instant::now();
         }
     }
@@ -211,13 +240,25 @@ impl App {
                             self.file_list_state.select(Some(self.selected_file));
                         }
                     }
+                    4 => { // Network panel - cycle to previous interface
+                        let network_count = self.networks.list().len();
+                        if network_count > 0 {
+                            self.selected_network = if self.selected_network == 0 {
+                                network_count - 1
+                            } else {
+                                self.selected_network - 1
+                            };
+                            // Reset network history when switching interfaces
+                            self.network_history = NetworkHistory::new();
+                        }
+                    }
                     _ => {}
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 match self.selected_panel {
                     2 => { // Process manager
-                        let max_processes = self.system.processes().len().min(10);
+                        let max_processes = self.system.processes().len();
                         if self.selected_process < max_processes - 1 {
                             self.selected_process += 1;
                             self.process_list_state.select(Some(self.selected_process));
@@ -226,6 +267,78 @@ impl App {
                     3 => { // File browser
                         if self.selected_file < self.dir_entries.len() - 1 {
                             self.selected_file += 1;
+                            self.file_list_state.select(Some(self.selected_file));
+                        }
+                    }
+                    4 => { // Network panel - cycle to next interface
+                        let network_count = self.networks.list().len();
+                        if network_count > 0 {
+                            self.selected_network = (self.selected_network + 1) % network_count;
+                            // Reset network history when switching interfaces
+                            self.network_history = NetworkHistory::new();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            KeyCode::PageUp => {
+                match self.selected_panel {
+                    2 => { // Process manager
+                        let page_size = 10; // Approximate visible items per page
+                        self.selected_process = self.selected_process.saturating_sub(page_size);
+                        self.process_list_state.select(Some(self.selected_process));
+                    }
+                    3 => { // File browser
+                        let page_size = 10;
+                        self.selected_file = self.selected_file.saturating_sub(page_size);
+                        self.file_list_state.select(Some(self.selected_file));
+                    }
+                    _ => {}
+                }
+            }
+            KeyCode::PageDown => {
+                match self.selected_panel {
+                    2 => { // Process manager
+                        let page_size = 10;
+                        let max_processes = self.system.processes().len();
+                        self.selected_process = (self.selected_process + page_size).min(max_processes.saturating_sub(1));
+                        self.process_list_state.select(Some(self.selected_process));
+                    }
+                    3 => { // File browser
+                        let page_size = 10;
+                        let max_files = self.dir_entries.len();
+                        self.selected_file = (self.selected_file + page_size).min(max_files.saturating_sub(1));
+                        self.file_list_state.select(Some(self.selected_file));
+                    }
+                    _ => {}
+                }
+            }
+            KeyCode::Home => {
+                match self.selected_panel {
+                    2 => { // Process manager
+                        self.selected_process = 0;
+                        self.process_list_state.select(Some(0));
+                    }
+                    3 => { // File browser
+                        self.selected_file = 0;
+                        self.file_list_state.select(Some(0));
+                    }
+                    _ => {}
+                }
+            }
+            KeyCode::End => {
+                match self.selected_panel {
+                    2 => { // Process manager
+                        let max_processes = self.system.processes().len();
+                        if max_processes > 0 {
+                            self.selected_process = max_processes - 1;
+                            self.process_list_state.select(Some(self.selected_process));
+                        }
+                    }
+                    3 => { // File browser
+                        let max_files = self.dir_entries.len();
+                        if max_files > 0 {
+                            self.selected_file = max_files - 1;
                             self.file_list_state.select(Some(self.selected_file));
                         }
                     }
@@ -381,7 +494,7 @@ fn render(app: &App, frame: &mut Frame) {
     let help_text = if app.show_help {
         "ESC or ? to close • System Monitor v1.0"
     } else {
-        "Navigation: ←→hl | ↑↓jk (navigate lists) | Enter (open directory) | r (refresh) | ? (help) | q (quit) • Live Updates"
+        "Navigation: ←→hl | ↑↓jk/PgUp/PgDn/Home/End (navigate/cycle) | Enter (open dir) | r (refresh) | ? (help) | q (quit)"
     };
     let footer = Paragraph::new(help_text)
         .style(Style::default().fg(Color::DarkGray))
@@ -395,7 +508,9 @@ SYSTEM MONITOR - HELP
 
 NAVIGATION:
   ← → h l  - Switch between panels
-  ↑ ↓ j k  - Navigate within Task Manager
+  ↑ ↓ j k  - Navigate within lists/cycle network interfaces
+  PgUp/PgDn- Jump by page in lists
+  Home/End - Jump to first/last item in lists
   Enter    - Navigate directories (File Browser)
   r        - Refresh all data
   ?        - Show/hide this help
@@ -404,9 +519,9 @@ NAVIGATION:
 PANELS:
   1. System Monitor - CPU, Memory, Uptime, Architecture
   2. System Status  - Time, Disk usage, Network stats  
-  3. Process Manager- Top processes (navigable with j/k)
-  4. File Explorer  - Navigate directories (j/k + Enter)
-  5. Network Graph  - Real-time network traffic visualization
+  3. Process Manager- Top processes (j/k/PgUp/PgDn/Home/End)
+  4. File Explorer  - Navigate directories (j/k/PgUp/PgDn/Home/End + Enter)
+  5. Network Graph  - Real-time network traffic (↑↓ to cycle interfaces)
 
 FEATURES:
   • Real-time system monitoring
@@ -510,16 +625,16 @@ fn render_clock(app: &App, frame: &mut Frame, area: Rect, is_selected: bool) {
         (0, 0)
     };
 
-    // Get network info
-    let network_info = app.networks.list().iter()
-        .map(|(name, network)| {
-            format!("{}: ↓{} MB ↑{} MB", 
-                   name, 
-                   network.total_received() / 1024 / 1024,
-                   network.total_transmitted() / 1024 / 1024)
-        })
-        .next()
-        .unwrap_or_else(|| "No network data".to_string());
+    // Get network info for the selected interface
+    let network_list: Vec<_> = app.networks.list().iter().collect();
+    let network_info = if let Some((name, network)) = network_list.get(app.selected_network) {
+        format!("{}: ↓{} MB ↑{} MB", 
+               name, 
+               network.total_received() / 1024 / 1024,
+               network.total_transmitted() / 1024 / 1024)
+    } else {
+        "No network data".to_string()
+    };
 
     let content = format!("▶ Time: {}\n▶ Date: {}\n▶ Boot disk: {} GB / {} GB\n▶ Disk usage: {:.1}%\n\n▶ Network: \n  {}\n\n▶ Load avg: {:.2}", 
                          time_str, 
@@ -627,8 +742,17 @@ fn render_network_graph(app: &App, frame: &mut Frame, area: Rect, is_selected: b
         Style::default().fg(Color::White)
     };
 
+    let interface_name = &app.network_history.current_interface;
+    let network_count = app.networks.list().len();
+    let title = if network_count > 1 {
+        format!("📡 Network Traffic Monitor - {} ({}/{}) [↑↓ to cycle]", 
+                interface_name, app.selected_network + 1, network_count)
+    } else {
+        format!("📡 Network Traffic Monitor - {}", interface_name)
+    };
+    
     let main_block = Block::default()
-        .title("📡 Network Traffic Monitor")
+        .title(title)
         .borders(Borders::ALL)
         .border_style(border_style);
 
