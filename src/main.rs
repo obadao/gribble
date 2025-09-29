@@ -454,8 +454,8 @@ fn render_system_info(app: &App, frame: &mut Frame, area: Rect, is_selected: boo
     let uptime_hours = uptime / 3600;
     let uptime_mins = (uptime % 3600) / 60;
 
-    let cpu_bar = "█".repeat((cpu_usage / 10.0) as usize).chars().take(10).collect::<String>();
-    let mem_bar = "█".repeat((memory_percent / 10) as usize).chars().take(10).collect::<String>();
+    let cpu_bar = "█".repeat(((cpu_usage / 10.0) as usize).min(10));
+    let mem_bar = "█".repeat(((memory_percent / 10) as usize).min(10));
 
     let content = vec![
         format!("▶ CPU: {:.1}% [{}{}]", 
