@@ -2,7 +2,7 @@
 
 A real-time terminal-based system monitor built with Rust and ratatui. Gribble provides live system metrics, process management, file browsing, and network traffic visualization in a keyboard-driven interface.
 
-![Gribble System Monitor](screenshot.png)
+![Gribble System Monitor](gribble-screenshot.png)
 
 ## Features
 
