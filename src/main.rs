@@ -59,7 +59,7 @@ impl NetworkHistory {
 
     fn update(&mut self, networks: &Networks, selected_interface: &str) {
         // Find the selected network interface or use the first available one
-        let network_list: Vec<_> = networks.list().iter().collect();
+        let network_list: Vec<_> = networks.list().iter().take(100).collect(); // Limit to 100 network interfaces
         let (interface_name, network_data) = if let Some(item) = network_list.get(0) {
             // If we have a specific interface selected, try to find it
             if !selected_interface.is_empty() {
@@ -115,6 +115,47 @@ struct Panel {
 }
 
 impl App {
+    fn format_memory_size(bytes: u64) -> String {
+        let mb = bytes / 1024 / 1024;
+        if mb >= 1024 {
+            let gb = mb as f64 / 1024.0;
+            format!("{:.1} GB", gb)
+        } else {
+            format!("{} MB", mb)
+        }
+    }
+
+    fn format_network_size(bytes: u64) -> String {
+        let kb = bytes / 1024;
+        if kb < 1024 {
+            format!("{} KB", kb)
+        } else if kb < 1024 * 1024 {
+            let mb = kb / 1024;
+            format!("{} MB", mb)
+        } else {
+            let gb = kb as f64 / (1024.0 * 1024.0);
+            format!("{:.1} GB", gb)
+        }
+    }
+
+    fn truncate_string(s: &str, max_len: usize) -> String {
+        if s.len() <= max_len {
+            s.to_string()
+        } else {
+            format!("{}...", &s[..max_len.saturating_sub(3)])
+        }
+    }
+
+    fn format_network_rate(bytes_per_second: u64) -> String {
+        let kb_per_sec = bytes_per_second / 1024;
+        if kb_per_sec >= 1024 {
+            let mb_per_sec = kb_per_sec as f64 / 1024.0;
+            format!("{:.1} MB/s", mb_per_sec)
+        } else {
+            format!("{} KB/s", kb_per_sec)
+        }
+    }
+
     fn new() -> Self {
         let mut system = System::new_all();
         system.refresh_all();
@@ -166,12 +207,14 @@ impl App {
                 let mut dirs = Vec::new();
                 let mut files = Vec::new();
 
-                for entry in entries.flatten() {
+                for entry in entries.flatten().take(10000) { // Limit to 10000 entries
                     let name = entry.file_name().to_string_lossy().to_string();
+                    // Truncate very long file/directory names to prevent layout issues
+                    let truncated_name = Self::truncate_string(&name, 40);
                     if entry.path().is_dir() {
-                        dirs.push(format!("📁 {}", name));
+                        dirs.push(format!("📁 {}", truncated_name));
                     } else {
-                        files.push(format!("📄 {}", name));
+                        files.push(format!("📄 {}", truncated_name));
                     }
                 }
                 
@@ -193,7 +236,7 @@ impl App {
             self.networks.refresh(true);
             
             // Get the selected network interface name
-            let network_list: Vec<_> = self.networks.list().iter().collect();
+            let network_list: Vec<_> = self.networks.list().iter().take(100).collect(); // Limit to 100 network interfaces
             let selected_interface_name = if let Some((name, _)) = network_list.get(self.selected_network) {
                 name.to_string()
             } else {
@@ -241,7 +284,7 @@ impl App {
                         }
                     }
                     4 => { // Network panel - cycle to previous interface
-                        let network_count = self.networks.list().len();
+                        let network_count = self.networks.list().len().min(100); // Limit to 100 network interfaces
                         if network_count > 0 {
                             self.selected_network = if self.selected_network == 0 {
                                 network_count - 1
@@ -258,7 +301,7 @@ impl App {
             KeyCode::Down | KeyCode::Char('j') => {
                 match self.selected_panel {
                     2 => { // Process manager
-                        let max_processes = self.system.processes().len();
+                        let max_processes = self.system.processes().len().min(1000); // Limit to 1000 processes
                         if self.selected_process < max_processes - 1 {
                             self.selected_process += 1;
                             self.process_list_state.select(Some(self.selected_process));
@@ -271,7 +314,7 @@ impl App {
                         }
                     }
                     4 => { // Network panel - cycle to next interface
-                        let network_count = self.networks.list().len();
+                        let network_count = self.networks.list().len().min(100); // Limit to 100 network interfaces
                         if network_count > 0 {
                             self.selected_network = (self.selected_network + 1) % network_count;
                             // Reset network history when switching interfaces
@@ -300,7 +343,7 @@ impl App {
                 match self.selected_panel {
                     2 => { // Process manager
                         let page_size = 10;
-                        let max_processes = self.system.processes().len();
+                        let max_processes = self.system.processes().len().min(1000); // Limit to 1000 processes
                         self.selected_process = (self.selected_process + page_size).min(max_processes.saturating_sub(1));
                         self.process_list_state.select(Some(self.selected_process));
                     }
@@ -329,7 +372,7 @@ impl App {
             KeyCode::End => {
                 match self.selected_panel {
                     2 => { // Process manager
-                        let max_processes = self.system.processes().len();
+                        let max_processes = self.system.processes().len().min(1000); // Limit to 1000 processes
                         if max_processes > 0 {
                             self.selected_process = max_processes - 1;
                             self.process_list_state.select(Some(self.selected_process));
@@ -569,21 +612,21 @@ fn render_system_info(app: &App, frame: &mut Frame, area: Rect, is_selected: boo
     let uptime_hours = uptime / 3600;
     let uptime_mins = (uptime % 3600) / 60;
 
-    let cpu_bar = "█".repeat(((cpu_usage / 10.0) as usize).min(10));
-    let mem_bar = "█".repeat(((memory_percent / 10) as usize).min(10));
+    let cpu_bar = "█".repeat(((cpu_usage / 10.0) as usize).min(10).max(0));
+    let mem_bar = "█".repeat(((memory_percent / 10) as usize).min(10).max(0));
 
     let content = vec![
         format!("▶ CPU: {:.1}% [{}{}]", 
                cpu_usage,
                cpu_bar,
-               " ".repeat(10 - cpu_bar.len())),
+               " ".repeat(10usize.saturating_sub(cpu_bar.len()))),
         format!("▶ RAM: {:.1}% [{}{}]", 
                memory_percent,
                mem_bar,
-               " ".repeat(10 - mem_bar.len())),
-        format!("▶ Memory: {} MB / {} MB", 
-               memory_usage / 1024 / 1024,
-               total_memory / 1024 / 1024),
+               " ".repeat(10usize.saturating_sub(mem_bar.len()))),
+        format!("▶ Memory: {} / {}", 
+               App::format_memory_size(memory_usage),
+               App::format_memory_size(total_memory)),
         format!("▶ Processes: {}", app.system.processes().len()),
         format!("▶ Uptime: {}h {:02}m", uptime_hours, uptime_mins),
         format!("▶ OS: {}", System::name().unwrap_or_else(|| "Unknown".to_string())),
@@ -616,32 +659,38 @@ fn render_clock(app: &App, frame: &mut Frame, area: Rect, is_selected: bool) {
 
     // Get disk info
     let main_disk = app.disks.list().first();
-    let (disk_usage, disk_total) = if let Some(disk) = main_disk {
+    let (disk_usage_str, disk_total_str, disk_percent) = if let Some(disk) = main_disk {
         let used = disk.total_space() - disk.available_space();
-        let used_gb = used / 1024 / 1024 / 1024;
-        let total_gb = disk.total_space() / 1024 / 1024 / 1024;
-        (used_gb, total_gb)
+        let used_str = App::format_memory_size(used);
+        let total_str = App::format_memory_size(disk.total_space());
+        let percent = if disk.total_space() > 0 { 
+            (used as f64 / disk.total_space() as f64) * 100.0 
+        } else { 
+            0.0 
+        };
+        (used_str, total_str, percent)
     } else {
-        (0, 0)
+        ("0 MB".to_string(), "0 MB".to_string(), 0.0)
     };
 
     // Get network info for the selected interface
-    let network_list: Vec<_> = app.networks.list().iter().collect();
+    let network_list: Vec<_> = app.networks.list().iter().take(100).collect(); // Limit to 100 network interfaces
     let network_info = if let Some((name, network)) = network_list.get(app.selected_network) {
-        format!("{}: ↓{} MB ↑{} MB", 
-               name, 
-               network.total_received() / 1024 / 1024,
-               network.total_transmitted() / 1024 / 1024)
+        let truncated_name = App::truncate_string(name, 15);
+        format!("{}: ↓{} ↑{}", 
+               truncated_name, 
+               App::format_network_size(network.total_received()),
+               App::format_network_size(network.total_transmitted()))
     } else {
         "No network data".to_string()
     };
 
-    let content = format!("▶ Time: {}\n▶ Date: {}\n▶ Boot disk: {} GB / {} GB\n▶ Disk usage: {:.1}%\n\n▶ Network: \n  {}\n\n▶ Load avg: {:.2}", 
+    let content = format!("▶ Time: {}\n▶ Date: {}\n▶ Boot disk: {} / {}\n▶ Disk usage: {:.1}%\n\n▶ Network: \n  {}\n\n▶ Load avg: {:.2}", 
                          time_str, 
                          date_str,
-                         disk_usage,
-                         disk_total,
-                         if disk_total > 0 { (disk_usage as f64 / disk_total as f64) * 100.0 } else { 0.0 },
+                         disk_usage_str,
+                         disk_total_str,
+                         disk_percent,
                          network_info,
                          System::load_average().one);
 
@@ -664,18 +713,21 @@ fn render_tasks(app: &App, frame: &mut Frame, area: Rect, is_selected: bool) {
         .borders(Borders::ALL)
         .border_style(border_style);
 
-    let mut processes: Vec<_> = app.system.processes().iter().collect();
+    let mut processes: Vec<_> = app.system.processes().iter().take(1000).collect(); // Limit to 1000 processes
     processes.sort_by(|a, b| b.1.cpu_usage().partial_cmp(&a.1.cpu_usage()).unwrap());
     
     let items: Vec<ListItem> = processes
         .iter()
         .enumerate()
         .map(|(i, (_, process))| {
-            let memory_mb = process.memory() / 1024 / 1024;
-            let content = format!("{:4.1}% │ {:3}MB │ {}", 
+            let memory_formatted = App::format_memory_size(process.memory());
+            // Calculate available space for process name (total width minus CPU%, memory, and separators)
+            // CPU% (4) + "│ " (2) + memory (8) + " │ " (3) = 17 characters used, leaving ~35 for process name
+            let process_name = App::truncate_string(&process.name().to_string_lossy(), 35);
+            let content = format!("{:4.1}% │ {:>8} │ {}", 
                                 process.cpu_usage(), 
-                                memory_mb,
-                                process.name().to_string_lossy());
+                                memory_formatted,
+                                process_name);
             let style = if is_selected && i == app.selected_process {
                 Style::default().fg(Color::Black).bg(Color::Yellow)
             } else {
@@ -743,12 +795,13 @@ fn render_network_graph(app: &App, frame: &mut Frame, area: Rect, is_selected: b
     };
 
     let interface_name = &app.network_history.current_interface;
-    let network_count = app.networks.list().len();
+    let truncated_interface = App::truncate_string(interface_name, 20);
+    let network_count = app.networks.list().len().min(100); // Limit to 100 network interfaces
     let title = if network_count > 1 {
         format!("📡 Network Traffic Monitor - {} ({}/{}) [↑↓ to cycle]", 
-                interface_name, app.selected_network + 1, network_count)
+                truncated_interface, app.selected_network + 1, network_count)
     } else {
-        format!("📡 Network Traffic Monitor - {}", interface_name)
+        format!("📡 Network Traffic Monitor - {}", truncated_interface)
     };
     
     let main_block = Block::default()
@@ -776,9 +829,9 @@ fn render_network_graph(app: &App, frame: &mut Frame, area: Rect, is_selected: b
     let tx_data: Vec<u64> = app.network_history.tx_rates.iter().copied().collect();
 
     // RX Graph
-    let rx_title = format!("RX: {} KB/s | Total: {} MB", 
-                          current_rx_rate / 1024, 
-                          total_rx / 1024 / 1024);
+    let rx_title = format!("RX: {} | Total: {}", 
+                          App::format_network_rate(current_rx_rate), 
+                          App::format_network_size(total_rx));
     let rx_sparkline = Sparkline::default()
         .block(Block::default()
             .title(rx_title)
@@ -788,9 +841,9 @@ fn render_network_graph(app: &App, frame: &mut Frame, area: Rect, is_selected: b
         .style(Style::default().fg(Color::Green));
 
     // TX Graph  
-    let tx_title = format!("TX: {} KB/s | Total: {} MB", 
-                          current_tx_rate / 1024, 
-                          total_tx / 1024 / 1024);
+    let tx_title = format!("TX: {} | Total: {}", 
+                          App::format_network_rate(current_tx_rate), 
+                          App::format_network_size(total_tx));
     let tx_sparkline = Sparkline::default()
         .block(Block::default()
             .title(tx_title)

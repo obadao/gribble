@@ -62,6 +62,9 @@ cargo run
 - Updates system data every 2 seconds
 - Maintains 60-point history for network graphs (2 minutes of data)
 - Cross-platform support (Windows, macOS, Linux)
+- Smart memory and network formatting (KB/MB/GB units)
+- Robust bounds checking and overflow protection
+- String truncation for long process/file names
 
 ## Requirements
 
