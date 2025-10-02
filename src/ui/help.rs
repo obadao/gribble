@@ -23,9 +23,9 @@ NAVIGATION:
 PANELS:
   1. System Monitor - CPU, Memory, Uptime, Architecture
   2. System Status  - Time, Disk usage, Network stats  
-  3. Process Manager- Top processes (j/k/PgUp/PgDn/Home/End)
-  4. File Explorer  - Navigate directories (j/k/PgUp/PgDn/Home/End + Enter)
-  5. Network Graph  - Real-time network traffic (↑↓ to cycle interfaces)
+  3. Process Manager- Top processes by CPU usage
+  4. File Explorer  - Directory browser with navigation
+  5. Network Graph  - Real-time network traffic graphs
 
 FEATURES:
   • Real-time system monitoring

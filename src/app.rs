@@ -130,7 +130,7 @@ impl App {
             }
             Err(e) => {
                 error!("Failed to read directory {:?}: {}", path, e);
-                vec!["Permission Denied".to_string()]
+                vec![format!("<Error: {}>", e)]
             },
         }
     }
@@ -228,7 +228,7 @@ impl App {
                                 self.selected_network - 1
                             };
                             // Reset network history when switching interfaces
-                            self.network_history = NetworkHistory::new();
+                            self.network_history.clear();
                         }
                     }
                     _ => {}
@@ -254,7 +254,7 @@ impl App {
                         if network_count > 0 {
                             self.selected_network = (self.selected_network + 1) % network_count;
                             // Reset network history when switching interfaces
-                            self.network_history = NetworkHistory::new();
+                            self.network_history.clear();
                         }
                     }
                     _ => {}
@@ -371,8 +371,8 @@ impl App {
                 self.file_list_state.select(Some(0));
             }
         } else if selected_item.starts_with("📁") {
-            // Enter directory
-            let dir_name = selected_item.trim_start_matches("📁 ");
+            // Enter directory - handle truncated names properly
+            let dir_name = selected_item.trim_start_matches("📁 ").trim_end_matches("...");
             let new_path = self.current_dir.join(dir_name);
             if new_path.is_dir() {
                 self.current_dir = new_path;

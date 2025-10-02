@@ -10,7 +10,7 @@ use chrono::{DateTime, Local};
 use crate::{
     app::App,
     utils::{
-        format_memory_size, format_network_size, format_network_rate, truncate_string,
+        format_memory_size, format_network_size, format_network_rate, truncate_string, format_path_display,
         PROCESS_NAME_MAX_LEN, INTERFACE_NAME_MAX_LEN,
     },
 };
@@ -178,11 +178,7 @@ pub fn render_file_browser(app: &App, frame: &mut Frame, area: Rect, is_selected
         Style::default().fg(Color::White)
     };
 
-    let path_display = if app.current_dir.to_string_lossy().len() > 30 {
-        format!("...{}", app.current_dir.to_string_lossy().chars().rev().take(27).collect::<String>().chars().rev().collect::<String>())
-    } else {
-        app.current_dir.to_string_lossy().to_string()
-    };
+    let path_display = format_path_display(&app.current_dir);
     let title = format!("📂 Explorer: {}", path_display);
     
     let block = Block::default()

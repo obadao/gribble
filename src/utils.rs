@@ -11,6 +11,7 @@ pub const MANUAL_REFRESH_COOLDOWN: Duration = Duration::from_millis(500);
 pub const PROCESS_NAME_MAX_LEN: usize = 35;
 pub const INTERFACE_NAME_MAX_LEN: usize = 20;
 pub const FILE_NAME_MAX_LEN: usize = 40;
+pub const MAX_PATH_DISPLAY_LEN: usize = 30;
 
 /// Format memory size in bytes to human-readable string
 pub fn format_memory_size(bytes: u64) -> String {
@@ -54,5 +55,18 @@ pub fn truncate_string(s: &str, max_len: usize) -> String {
         s.to_string()
     } else {
         format!("{}...", &s[..max_len.saturating_sub(3)])
+    }
+}
+
+/// Format path display with proper character boundary handling
+pub fn format_path_display(path: &std::path::Path) -> String {
+    let path_str = path.to_string_lossy();
+    if path_str.len() <= MAX_PATH_DISPLAY_LEN {
+        path_str.to_string()
+    } else {
+        let chars: Vec<char> = path_str.chars().collect();
+        let take_len = MAX_PATH_DISPLAY_LEN.saturating_sub(3);
+        let start_pos = chars.len().saturating_sub(take_len);
+        format!("...{}", chars[start_pos..].iter().collect::<String>())
     }
 }
