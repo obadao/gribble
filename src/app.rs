@@ -19,6 +19,34 @@ use crate::{
     },
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Panel {
+    SystemMonitor = 0,
+    SystemStatus = 1,
+    ProcessManager = 2,
+    FileExplorer = 3,
+    NetworkGraph = 4,
+}
+
+impl Panel {
+    pub const COUNT: usize = 5;
+    
+    pub fn from_index(index: usize) -> Option<Panel> {
+        match index {
+            0 => Some(Panel::SystemMonitor),
+            1 => Some(Panel::SystemStatus),
+            2 => Some(Panel::ProcessManager),
+            3 => Some(Panel::FileExplorer),
+            4 => Some(Panel::NetworkGraph),
+            _ => None,
+        }
+    }
+    
+    pub fn as_index(self) -> usize {
+        self as usize
+    }
+}
+
 // Cached data structures
 #[derive(Clone)]
 pub struct CachedProcess {
@@ -41,9 +69,10 @@ pub struct App {
     pub networks: Networks,
     pub last_update: Instant,
     pub last_manual_refresh: Instant,
-    pub selected_panel: usize,
+    pub selected_panel: Panel,
     pub current_dir: PathBuf,
     pub dir_entries: Vec<String>,
+    pub dir_entry_paths: Vec<PathBuf>, // Store original paths for navigation
     pub selected_process: usize,
     pub selected_file: usize,
     pub selected_network: usize,
@@ -68,7 +97,7 @@ impl App {
             warn!("Failed to get current directory: {}, using '.'", e);
             PathBuf::from(".")
         });
-        let dir_entries = Self::read_directory(&current_dir);
+        let (dir_entries, dir_entry_paths) = Self::read_directory(&current_dir);
 
         let mut process_list_state = ListState::default();
         process_list_state.select(Some(0));
@@ -84,9 +113,10 @@ impl App {
             networks,
             last_update: Instant::now(),
             last_manual_refresh: Instant::now(),
-            selected_panel: 0,
+            selected_panel: Panel::SystemMonitor,
             current_dir,
             dir_entries,
+            dir_entry_paths,
             selected_process: 0,
             selected_file: 0,
             selected_network: 0,
@@ -104,33 +134,52 @@ impl App {
         app
     }
 
-    fn read_directory(path: &PathBuf) -> Vec<String> {
+    fn read_directory(path: &PathBuf) -> (Vec<String>, Vec<PathBuf>) {
         match fs::read_dir(path) {
             Ok(entries) => {
                 let mut items = vec!["..".to_string()];
+                let mut paths = vec![path.parent().unwrap_or(path).to_path_buf()]; // Parent path for ".."
                 let mut dirs = Vec::new();
+                let mut dir_paths = Vec::new();
                 let mut files = Vec::new();
+                let mut file_paths = Vec::new();
 
-                for entry in entries.flatten().take(MAX_FILES) { // Limit to 10000 entries
+                for entry in entries.flatten().take(MAX_FILES) {
+                    let entry_path = entry.path();
                     let name = entry.file_name().to_string_lossy().to_string();
-                    // Truncate very long file/directory names to prevent layout issues
                     let truncated_name = truncate_string(&name, FILE_NAME_MAX_LEN);
-                    if entry.path().is_dir() {
+                    
+                    if entry_path.is_dir() {
                         dirs.push(format!("📁 {}", truncated_name));
+                        dir_paths.push(entry_path);
                     } else {
                         files.push(format!("📄 {}", truncated_name));
+                        file_paths.push(entry_path);
                     }
                 }
                 
-                dirs.sort();
-                files.sort();
-                items.extend(dirs);
-                items.extend(files);
-                items
+                // Sort directories and files together with their paths
+                let mut combined: Vec<_> = dirs.into_iter().zip(dir_paths.into_iter()).collect();
+                combined.sort_by(|a, b| a.0.cmp(&b.0));
+                
+                let mut file_combined: Vec<_> = files.into_iter().zip(file_paths.into_iter()).collect();
+                file_combined.sort_by(|a, b| a.0.cmp(&b.0));
+                
+                // Extract sorted items and paths
+                for (item, path) in combined {
+                    items.push(item);
+                    paths.push(path);
+                }
+                for (item, path) in file_combined {
+                    items.push(item);
+                    paths.push(path);
+                }
+                
+                (items, paths)
             }
             Err(e) => {
                 error!("Failed to read directory {:?}: {}", path, e);
-                vec![format!("<Error: {}>", e)]
+                (vec![format!("<Error: {}>", e)], vec![path.clone()])
             },
         }
     }
@@ -207,19 +256,19 @@ impl App {
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 match self.selected_panel {
-                    2 => { // Process manager
+                    Panel::ProcessManager => { // Process manager
                         if self.selected_process > 0 {
                             self.selected_process -= 1;
                             self.process_list_state.select(Some(self.selected_process));
                         }
                     }
-                    3 => { // File browser
+                    Panel::FileExplorer => { // File browser
                         if self.selected_file > 0 {
                             self.selected_file -= 1;
                             self.file_list_state.select(Some(self.selected_file));
                         }
                     }
-                    4 => { // Network panel - cycle to previous interface
+                    Panel::NetworkGraph => { // Network panel - cycle to previous interface
                         let network_count = self.cached_networks.len();
                         if network_count > 0 {
                             self.selected_network = if self.selected_network == 0 {
@@ -236,20 +285,20 @@ impl App {
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 match self.selected_panel {
-                    2 => { // Process manager
+                    Panel::ProcessManager => { // Process manager
                         let max_processes = self.cached_processes.len();
                         if self.selected_process < max_processes.saturating_sub(1) {
                             self.selected_process += 1;
                             self.process_list_state.select(Some(self.selected_process));
                         }
                     }
-                    3 => { // File browser
+                    Panel::FileExplorer => { // File browser
                         if self.selected_file < self.dir_entries.len() - 1 {
                             self.selected_file += 1;
                             self.file_list_state.select(Some(self.selected_file));
                         }
                     }
-                    4 => { // Network panel - cycle to next interface
+                    Panel::NetworkGraph => { // Network panel - cycle to next interface
                         let network_count = self.cached_networks.len();
                         if network_count > 0 {
                             self.selected_network = (self.selected_network + 1) % network_count;
@@ -262,12 +311,12 @@ impl App {
             }
             KeyCode::PageUp => {
                 match self.selected_panel {
-                    2 => { // Process manager
+                    Panel::ProcessManager => { // Process manager
                         let page_size = PAGE_SIZE; // Approximate visible items per page
                         self.selected_process = self.selected_process.saturating_sub(page_size);
                         self.process_list_state.select(Some(self.selected_process));
                     }
-                    3 => { // File browser
+                    Panel::FileExplorer => { // File browser
                         let page_size = PAGE_SIZE;
                         self.selected_file = self.selected_file.saturating_sub(page_size);
                         self.file_list_state.select(Some(self.selected_file));
@@ -277,13 +326,13 @@ impl App {
             }
             KeyCode::PageDown => {
                 match self.selected_panel {
-                    2 => { // Process manager
+                    Panel::ProcessManager => { // Process manager
                         let page_size = PAGE_SIZE;
                         let max_processes = self.cached_processes.len();
                         self.selected_process = (self.selected_process + page_size).min(max_processes.saturating_sub(1));
                         self.process_list_state.select(Some(self.selected_process));
                     }
-                    3 => { // File browser
+                    Panel::FileExplorer => { // File browser
                         let page_size = PAGE_SIZE;
                         let max_files = self.dir_entries.len();
                         self.selected_file = (self.selected_file + page_size).min(max_files.saturating_sub(1));
@@ -294,11 +343,11 @@ impl App {
             }
             KeyCode::Home => {
                 match self.selected_panel {
-                    2 => { // Process manager
+                    Panel::ProcessManager => { // Process manager
                         self.selected_process = 0;
                         self.process_list_state.select(Some(0));
                     }
-                    3 => { // File browser
+                    Panel::FileExplorer => { // File browser
                         self.selected_file = 0;
                         self.file_list_state.select(Some(0));
                     }
@@ -307,14 +356,14 @@ impl App {
             }
             KeyCode::End => {
                 match self.selected_panel {
-                    2 => { // Process manager
+                    Panel::ProcessManager => { // Process manager
                         let max_processes = self.cached_processes.len();
                         if max_processes > 0 {
                             self.selected_process = max_processes.saturating_sub(1);
                             self.process_list_state.select(Some(self.selected_process));
                         }
                     }
-                    3 => { // File browser
+                    Panel::FileExplorer => { // File browser
                         let max_files = self.dir_entries.len();
                         if max_files > 0 {
                             self.selected_file = max_files - 1;
@@ -325,7 +374,7 @@ impl App {
                 }
             }
             KeyCode::Enter => {
-                if self.selected_panel == 3 {
+                if self.selected_panel == Panel::FileExplorer {
                     self.navigate_into_selected();
                 }
             }
@@ -333,7 +382,9 @@ impl App {
                 // Force refresh with rate limiting
                 if self.last_manual_refresh.elapsed() >= MANUAL_REFRESH_COOLDOWN {
                     self.system.refresh_all();
-                    self.dir_entries = Self::read_directory(&self.current_dir);
+                    let (dir_entries, dir_entry_paths) = Self::read_directory(&self.current_dir);
+                    self.dir_entries = dir_entries;
+                    self.dir_entry_paths = dir_entry_paths;
                     self.last_manual_refresh = Instant::now();
                 }
             }
@@ -342,10 +393,12 @@ impl App {
             }
             KeyCode::Backspace => {
                 // Go up one directory (same as selecting "..")
-                if self.selected_panel == 3 { // File browser panel
+                if self.selected_panel == Panel::FileExplorer { // File browser panel
                     if let Some(parent) = self.current_dir.parent() {
                         self.current_dir = parent.to_path_buf();
-                        self.dir_entries = Self::read_directory(&self.current_dir);
+                        let (dir_entries, dir_entry_paths) = Self::read_directory(&self.current_dir);
+                        self.dir_entries = dir_entries;
+                        self.dir_entry_paths = dir_entry_paths;
                         self.selected_file = 0;
                         self.file_list_state.select(Some(0));
                     }
@@ -356,27 +409,28 @@ impl App {
     }
 
     fn navigate_into_selected(&mut self) {
-        if self.selected_file >= self.dir_entries.len() {
+        if self.selected_file >= self.dir_entries.len() || self.selected_file >= self.dir_entry_paths.len() {
             return;
         }
         
         let selected_item = &self.dir_entries[self.selected_file];
+        let selected_path = &self.dir_entry_paths[self.selected_file];
         
         if selected_item == ".." {
-            // Go up one directory
-            if let Some(parent) = self.current_dir.parent() {
-                self.current_dir = parent.to_path_buf();
-                self.dir_entries = Self::read_directory(&self.current_dir);
-                self.selected_file = 0;
-                self.file_list_state.select(Some(0));
-            }
+            // Go up one directory using the stored parent path
+            self.current_dir = selected_path.clone();
+            let (dir_entries, dir_entry_paths) = Self::read_directory(&self.current_dir);
+            self.dir_entries = dir_entries;
+            self.dir_entry_paths = dir_entry_paths;
+            self.selected_file = 0;
+            self.file_list_state.select(Some(0));
         } else if selected_item.starts_with("📁") {
-            // Enter directory - handle truncated names properly
-            let dir_name = selected_item.trim_start_matches("📁 ").trim_end_matches("...");
-            let new_path = self.current_dir.join(dir_name);
-            if new_path.is_dir() {
-                self.current_dir = new_path;
-                self.dir_entries = Self::read_directory(&self.current_dir);
+            // Enter directory using the stored original path
+            if selected_path.is_dir() {
+                self.current_dir = selected_path.clone();
+                let (dir_entries, dir_entry_paths) = Self::read_directory(&self.current_dir);
+                self.dir_entries = dir_entries;
+                self.dir_entry_paths = dir_entry_paths;
                 self.selected_file = 0;
                 self.file_list_state.select(Some(0));
             }
@@ -385,15 +439,19 @@ impl App {
     }
 
     fn select_next_panel(&mut self) {
-        self.selected_panel = (self.selected_panel + 1) % 5; // 5 panels total
+        let current_index = self.selected_panel.as_index();
+        let next_index = (current_index + 1) % Panel::COUNT;
+        self.selected_panel = Panel::from_index(next_index).unwrap_or(Panel::SystemMonitor);
     }
 
     fn select_previous_panel(&mut self) {
-        self.selected_panel = if self.selected_panel == 0 {
-            4 // 5 panels total (0-4)
+        let current_index = self.selected_panel.as_index();
+        let prev_index = if current_index == 0 {
+            Panel::COUNT - 1
         } else {
-            self.selected_panel - 1
+            current_index - 1
         };
+        self.selected_panel = Panel::from_index(prev_index).unwrap_or(Panel::SystemMonitor);
     }
 
     pub fn render_header(&self, frame: &mut Frame, area: Rect) {

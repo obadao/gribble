@@ -98,11 +98,11 @@ fn render(app: &App, frame: &mut Frame) {
             .split(content_layout[1]);
 
         // Render panels
-        render_system_info(app, frame, left_layout[0], app.selected_panel == 0);
-        render_clock(app, frame, right_layout[0], app.selected_panel == 1);
-        render_tasks(app, frame, left_layout[1], app.selected_panel == 2);
-        render_file_browser(app, frame, right_layout[1], app.selected_panel == 3);
-        render_network_graph(app, frame, main_content_layout[1], app.selected_panel == 4);
+        render_system_info(app, frame, left_layout[0], app.selected_panel == app::Panel::SystemMonitor);
+        render_clock(app, frame, right_layout[0], app.selected_panel == app::Panel::SystemStatus);
+        render_tasks(app, frame, left_layout[1], app.selected_panel == app::Panel::ProcessManager);
+        render_file_browser(app, frame, right_layout[1], app.selected_panel == app::Panel::FileExplorer);
+        render_network_graph(app, frame, main_content_layout[1], app.selected_panel == app::Panel::NetworkGraph);
     }
 
     // Footer
