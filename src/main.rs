@@ -612,8 +612,8 @@ fn render_system_info(app: &App, frame: &mut Frame, area: Rect, is_selected: boo
     let uptime_hours = uptime / 3600;
     let uptime_mins = (uptime % 3600) / 60;
 
-    let cpu_blocks = ((cpu_usage / 10.0).round() as usize).min(10).max(0);
-    let mem_blocks = ((memory_percent as f64 / 10.0).round() as usize).min(10).max(0);
+    let cpu_blocks = ((cpu_usage / 10.0).floor() as usize).min(10).max(0);
+    let mem_blocks = ((memory_percent as f64 / 10.0).floor() as usize).min(10).max(0);
     let cpu_bar = "█".repeat(cpu_blocks) + &" ".repeat(10 - cpu_blocks);
     let mem_bar = "█".repeat(mem_blocks) + &" ".repeat(10 - mem_blocks);
 
