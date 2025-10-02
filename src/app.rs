@@ -373,6 +373,17 @@ impl App {
     }
 
     pub fn handle_key_event(&mut self, key: KeyCode) {
+        // Handle modal keys first - they take priority
+        if self.show_modal {
+            match key {
+                KeyCode::Char('i') | KeyCode::Char('q') | KeyCode::Esc | KeyCode::Enter => {
+                    self.hide_modal();
+                }
+                _ => {} // Ignore all other keys when modal is open
+            }
+            return;
+        }
+
         if self.show_help {
             match key {
                 KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('h') => {
@@ -385,13 +396,7 @@ impl App {
 
         match key {
             KeyCode::Char('q') | KeyCode::Esc => {
-                if self.show_modal {
-                    self.hide_modal();
-                } else if self.show_help {
-                    self.show_help = false;
-                } else {
-                    self.should_quit = true;
-                }
+                self.should_quit = true;
             }
             KeyCode::Left | KeyCode::Char('h') => {
                 self.select_previous_panel();
@@ -541,17 +546,12 @@ impl App {
                 self.show_help = true;
             }
             KeyCode::Char('i') => {
-                if self.show_modal {
-                    // Close modal if already open
-                    self.hide_modal();
-                } else {
-                    // Show info modal based on current panel
-                    match self.selected_panel {
-                        Panel::ProcessManager => self.show_process_modal(),
-                        Panel::NetworkGraph => self.show_network_modal(),
-                        Panel::SystemMonitor | Panel::SystemStatus => self.show_system_modal(),
-                        Panel::FileExplorer => self.show_file_modal(),
-                    }
+                // Show info modal based on current panel
+                match self.selected_panel {
+                    Panel::ProcessManager => self.show_process_modal(),
+                    Panel::NetworkGraph => self.show_network_modal(),
+                    Panel::SystemMonitor | Panel::SystemStatus => self.show_system_modal(),
+                    Panel::FileExplorer => self.show_file_modal(),
                 }
             }
             KeyCode::Char('b') => {
@@ -736,6 +736,12 @@ impl App {
                 .to_string();
             
             let content = if is_dir {
+                // Count directory items
+                let item_count = match std::fs::read_dir(selected_path) {
+                    Ok(entries) => entries.count(),
+                    Err(_) => 0,
+                };
+                
                 format!(
                     "Name: {}\n\
                     Type: Directory\n\
@@ -743,7 +749,7 @@ impl App {
                     Permissions: {}\n\
                     Path: {}",
                     clean_name,
-                    "N/A", // Directory item count would require reading the directory
+                    item_count,
                     permissions,
                     selected_path.display()
                 )

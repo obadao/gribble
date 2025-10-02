@@ -12,20 +12,7 @@ pub fn render_modal(app: &App, frame: &mut Frame, area: Rect) {
         return;
     }
 
-    // Create modal area (centered)
-    let modal_width = (area.width * 3) / 4;
-    let modal_height = (area.height * 3) / 4;
-    let modal_x = (area.width - modal_width) / 2;
-    let modal_y = (area.height - modal_height) / 2;
-
-    let modal_area = Rect::new(
-        area.x + modal_x,
-        area.y + modal_y,
-        modal_width,
-        modal_height,
-    );
-
-    // Create modal content based on type
+    // Calculate content to determine optimal modal size
     let (title, content) = match &app.modal_data {
         ModalData::ProcessDetails { name, pid, cpu_usage, memory_usage, status, cmd } => {
             let title = format!("Process Details: {}", name);
@@ -111,6 +98,32 @@ pub fn render_modal(app: &App, frame: &mut Frame, area: Rect) {
         }
     };
 
+    // Calculate optimal modal size based on content
+    let content_lines = content.lines().count() + 3; // +3 for title, spacing, and close button
+    let max_line_width = content.lines().map(|line| line.len()).max().unwrap_or(20);
+    
+    let modal_width = std::cmp::min(
+        std::cmp::max(max_line_width as u16 + 4, 40), // Minimum 40, content width + padding
+        area.width.saturating_sub(8) // Leave some margin from screen edges
+    );
+    let modal_height = std::cmp::min(
+        std::cmp::max(content_lines as u16 + 2, 8), // Minimum 8, content height + padding
+        area.height.saturating_sub(6) // Leave some margin from screen edges
+    );
+
+    // Center the modal
+    let modal_x = (area.width - modal_width) / 2;
+    let modal_y = (area.height - modal_height) / 2;
+
+    let modal_area = Rect::new(
+        area.x + modal_x,
+        area.y + modal_y,
+        modal_width,
+        modal_height,
+    );
+
+    // Content already calculated above, now render the modal
+
     // Clear the modal area first to ensure no background interference
     frame.render_widget(Clear, modal_area);
     
@@ -119,12 +132,12 @@ pub fn render_modal(app: &App, frame: &mut Frame, area: Rect) {
         .style(Style::default().bg(Color::Black));
     frame.render_widget(solid_background, modal_area);
 
-    // Create content area inside the modal (full height minus borders)
+    // Create content area inside the modal (leave space for close button)
     let content_area = Rect::new(
         modal_area.x + 1,
         modal_area.y + 1,
         modal_area.width - 2,
-        modal_area.height - 2, // Full height minus borders
+        modal_area.height - 4, // Leave space for close button
     );
 
     // Render modal content with solid black background
@@ -135,6 +148,26 @@ pub fn render_modal(app: &App, frame: &mut Frame, area: Rect) {
             .bg(Color::Black)); // Solid black background
 
     frame.render_widget(modal_content, content_area);
+
+    // Render close button at the bottom
+    let button_area = Rect::new(
+        modal_area.x + 1,
+        modal_area.y + modal_area.height - 3,
+        modal_area.width - 2,
+        1,
+    );
+
+    let close_button = Paragraph::new("[ Close ]")
+        .style(Style::default()
+            .fg(Color::Black)
+            .bg(Color::Yellow)) // Highlighted button
+        .alignment(Alignment::Center)
+        .block(Block::default()
+            .style(Style::default()
+                .fg(Color::Black)
+                .bg(Color::Yellow)));
+
+    frame.render_widget(close_button, button_area);
 
     // Render the modal border on top with title
     let modal_block = Block::default()
