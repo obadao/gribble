@@ -89,6 +89,47 @@ Press `i` to show detailed information:
 - Minimum terminal size 80x24
 - Read permissions for system information
 
+## Releases
+
+Pre-built binaries are available for download on the [Releases page](https://github.com/Cod-e-Codes/gribble/releases).
+
+### Supported Platforms
+
+- **Linux (x86_64)** - `gribble-x86_64-unknown-linux-gnu.tar.gz`
+- **Windows (x64)** - `gribble-x86_64-pc-windows-msvc.zip`
+- **macOS (Intel)** - `gribble-x86_64-apple-darwin.tar.gz`
+- **macOS (Apple Silicon)** - `gribble-aarch64-apple-darwin.tar.gz`
+
+### Installation
+
+**Linux/macOS:**
+```bash
+# Download and extract
+tar -xzf gribble-x86_64-unknown-linux-gnu.tar.gz
+
+# Make executable and move to PATH
+chmod +x gribble-x86_64-unknown-linux-gnu
+sudo mv gribble-x86_64-unknown-linux-gnu /usr/local/bin/gribble
+```
+
+**Windows:**
+Extract the zip file and add the directory to your PATH environment variable.
+
+## Development
+
+### Creating a Release
+
+Use the included release script to create a new version:
+
+```bash
+./release.sh 1.0.0
+```
+
+This will:
+- Update the version in `Cargo.toml`
+- Create and push a git tag
+- Trigger GitHub Actions to build and publish cross-platform binaries
+
 ## License
 
 MIT License
