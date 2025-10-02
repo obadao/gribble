@@ -157,15 +157,17 @@ pub fn render_modal(app: &App, frame: &mut Frame, area: Rect) {
         1,
     );
 
+    // Render the close button background first
+    let button_background = Block::default()
+        .style(Style::default().bg(Color::Yellow));
+    frame.render_widget(button_background, button_area);
+
+    // Then render the text on top
     let close_button = Paragraph::new("[ Close ]")
         .style(Style::default()
             .fg(Color::Black)
-            .bg(Color::Yellow)) // Highlighted button
-        .alignment(Alignment::Center)
-        .block(Block::default()
-            .style(Style::default()
-                .fg(Color::Black)
-                .bg(Color::Yellow)));
+            .bg(Color::Yellow))
+        .alignment(Alignment::Center);
 
     frame.render_widget(close_button, button_area);
 
@@ -177,4 +179,16 @@ pub fn render_modal(app: &App, frame: &mut Frame, area: Rect) {
             .fg(Color::White)
             .bg(Color::Black)); // Solid black background
     frame.render_widget(modal_block, modal_area);
+
+    // Re-render the button after the border to ensure it's visible
+    let button_background = Block::default()
+        .style(Style::default().bg(Color::Yellow));
+    frame.render_widget(button_background, button_area);
+
+    let close_button = Paragraph::new("[ Close ]")
+        .style(Style::default()
+            .fg(Color::Black)
+            .bg(Color::Yellow))
+        .alignment(Alignment::Center);
+    frame.render_widget(close_button, button_area);
 }
