@@ -9,6 +9,7 @@ use sysinfo::{System, Disks, Networks};
 use std::time::Instant;
 use std::fs;
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use tracing::{error, warn, info};
 
@@ -727,7 +728,18 @@ impl App {
         if let Ok(metadata) = std::fs::metadata(selected_path) {
             let file_size = metadata.len();
             let is_dir = metadata.is_dir();
-            let permissions = format!("{:o}", metadata.permissions().mode() & 0o777);
+            let permissions = if cfg!(unix) {
+                #[cfg(unix)]
+                {
+                    format!("{:o}", metadata.permissions().mode() & 0o777)
+                }
+                #[cfg(not(unix))]
+                {
+                    "N/A".to_string()
+                }
+            } else {
+                "N/A".to_string()
+            };
             
             // Get file name without emoji prefix
             let clean_name = selected_item
