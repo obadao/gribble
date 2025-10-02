@@ -9,7 +9,8 @@ use sysinfo::{System, Disks, Networks};
 use std::time::Instant;
 use std::fs;
 use std::path::PathBuf;
-use tracing::{error, warn};
+use std::os::unix::fs::PermissionsExt;
+use tracing::{error, warn, info};
 
 use crate::{
     network::NetworkHistory,
@@ -51,6 +52,7 @@ impl Panel {
 #[derive(Clone)]
 pub struct CachedProcess {
     pub name: String,
+    pub pid: u32,
     pub cpu_usage: f32,
     pub memory: u64,
 }
@@ -60,6 +62,49 @@ pub struct CachedNetwork {
     pub name: String,
     pub total_received: u64,
     pub total_transmitted: u64,
+}
+
+#[derive(Debug, Clone)]
+pub enum ModalType {
+    ProcessDetails,
+    NetworkDetails,
+    SystemDetails,
+    DiskDetails,
+}
+
+#[derive(Clone)]
+pub enum ModalData {
+    ProcessDetails {
+        name: String,
+        pid: u32,
+        cpu_usage: f32,
+        memory_usage: u64,
+        status: String,
+        cmd: String,
+    },
+    NetworkDetails {
+        name: String,
+        total_received: u64,
+        total_transmitted: u64,
+        received_rate: u64,
+        transmitted_rate: u64,
+    },
+    SystemDetails {
+        hostname: String,
+        os_name: String,
+        os_version: String,
+        kernel_version: String,
+        cpu_count: usize,
+        total_memory: u64,
+        uptime: u64,
+    },
+    DiskDetails {
+        name: String,
+        mount_point: String,
+        total_space: u64,
+        available_space: u64,
+        file_system: String,
+    },
 }
 
 pub struct App {
@@ -84,6 +129,13 @@ pub struct App {
     pub cached_processes: Vec<CachedProcess>,
     pub cached_networks: Vec<CachedNetwork>,
     pub last_data_refresh: Instant,
+    // Error recovery
+    pub directory_history: Vec<PathBuf>, // Track directory history for recovery
+    pub last_successful_dir: PathBuf, // Last directory that loaded successfully
+    // Modal system
+    pub show_modal: bool,
+    pub modal_type: ModalType,
+    pub modal_data: ModalData,
 }
 
 impl App {
@@ -114,7 +166,7 @@ impl App {
             last_update: Instant::now(),
             last_manual_refresh: Instant::now(),
             selected_panel: Panel::SystemMonitor,
-            current_dir,
+            current_dir: current_dir.clone(),
             dir_entries,
             dir_entry_paths,
             selected_process: 0,
@@ -127,6 +179,19 @@ impl App {
             cached_processes: Vec::new(),
             cached_networks: Vec::new(),
             last_data_refresh: Instant::now(),
+            directory_history: vec![current_dir.clone()],
+            last_successful_dir: current_dir,
+            show_modal: false,
+            modal_type: ModalType::SystemDetails,
+            modal_data: ModalData::SystemDetails {
+                hostname: "Unknown".to_string(),
+                os_name: "Unknown".to_string(),
+                os_version: "Unknown".to_string(),
+                kernel_version: "Unknown".to_string(),
+                cpu_count: 0,
+                total_memory: 0,
+                uptime: 0,
+            },
         };
         
         // Initial data cache
@@ -137,40 +202,47 @@ impl App {
     fn read_directory(path: &PathBuf) -> (Vec<String>, Vec<PathBuf>) {
         match fs::read_dir(path) {
             Ok(entries) => {
-                let mut items = vec!["..".to_string()];
-                let mut paths = vec![path.parent().unwrap_or(path).to_path_buf()]; // Parent path for ".."
-                let mut dirs = Vec::new();
-                let mut dir_paths = Vec::new();
-                let mut files = Vec::new();
-                let mut file_paths = Vec::new();
+                // Pre-allocate vectors with capacity to avoid reallocations
+                let mut items = Vec::with_capacity(MAX_FILES + 1); // +1 for ".."
+                let mut paths = Vec::with_capacity(MAX_FILES + 1);
+                
+                // Add parent directory entry
+                items.push("..".to_string());
+                paths.push(path.parent().unwrap_or(path).to_path_buf());
+                
+                // Pre-allocate separate vectors for directories and files
+                let mut dirs = Vec::with_capacity(MAX_FILES / 2);
+                let mut files = Vec::with_capacity(MAX_FILES / 2);
 
-                for entry in entries.flatten().take(MAX_FILES) {
+                // Collect entries efficiently, limiting to MAX_FILES
+                let mut entry_count = 0;
+                for entry in entries.flatten() {
+                    if entry_count >= MAX_FILES {
+                        break; // Stop reading once we have enough entries
+                    }
+                    
                     let entry_path = entry.path();
                     let name = entry.file_name().to_string_lossy().to_string();
                     let truncated_name = truncate_string(&name, FILE_NAME_MAX_LEN);
                     
                     if entry_path.is_dir() {
-                        dirs.push(format!("📁 {}", truncated_name));
-                        dir_paths.push(entry_path);
+                        dirs.push((format!("📁 {}", truncated_name), entry_path));
                     } else {
-                        files.push(format!("📄 {}", truncated_name));
-                        file_paths.push(entry_path);
+                        files.push((format!("📄 {}", truncated_name), entry_path));
                     }
+                    entry_count += 1;
                 }
                 
-                // Sort directories and files together with their paths
-                let mut combined: Vec<_> = dirs.into_iter().zip(dir_paths.into_iter()).collect();
-                combined.sort_by(|a, b| a.0.cmp(&b.0));
+                // Sort directories and files separately for better performance
+                dirs.sort_by(|a, b| a.0.cmp(&b.0));
+                files.sort_by(|a, b| a.0.cmp(&b.0));
                 
-                let mut file_combined: Vec<_> = files.into_iter().zip(file_paths.into_iter()).collect();
-                file_combined.sort_by(|a, b| a.0.cmp(&b.0));
-                
-                // Extract sorted items and paths
-                for (item, path) in combined {
+                // Add sorted directories first, then files
+                for (item, path) in dirs {
                     items.push(item);
                     paths.push(path);
                 }
-                for (item, path) in file_combined {
+                for (item, path) in files {
                     items.push(item);
                     paths.push(path);
                 }
@@ -179,9 +251,75 @@ impl App {
             }
             Err(e) => {
                 error!("Failed to read directory {:?}: {}", path, e);
-                (vec![format!("<Error: {}>", e)], vec![path.clone()])
+                (vec![format!("<Error: {}>", e), "<Press 'r' to retry>".to_string()], vec![path.clone(), path.clone()])
             },
         }
+    }
+
+    fn try_navigate_to_directory(&mut self, target_path: &PathBuf) -> bool {
+        let (dir_entries, dir_entry_paths) = Self::read_directory(target_path);
+        
+        // Check if we successfully read the directory (not an error)
+        if dir_entries.len() > 0 && !dir_entries[0].starts_with("<Error:") {
+            self.current_dir = target_path.clone();
+            self.dir_entries = dir_entries;
+            self.dir_entry_paths = dir_entry_paths;
+            self.selected_file = 0;
+            self.file_list_state.select(Some(0));
+            
+            // Update directory history and last successful directory
+            if !self.directory_history.contains(target_path) {
+                self.directory_history.push(target_path.clone());
+                // Limit history to prevent memory growth
+                if self.directory_history.len() > 20 {
+                    self.directory_history.remove(0);
+                }
+            }
+            self.last_successful_dir = target_path.clone();
+            return true;
+        }
+        
+        warn!("Failed to navigate to directory: {:?}", target_path);
+        false
+    }
+
+    fn navigate_back_to_safe_directory(&mut self) {
+        // Try to go back to the last successful directory
+        if self.last_successful_dir != self.current_dir {
+            let safe_dir = self.last_successful_dir.clone();
+            if self.try_navigate_to_directory(&safe_dir) {
+                info!("Recovered to safe directory: {:?}", safe_dir);
+                return;
+            }
+        }
+        
+        // If that fails, try the parent directory
+        if let Some(parent) = self.current_dir.parent() {
+            let parent_path = parent.to_path_buf();
+            if self.try_navigate_to_directory(&parent_path) {
+                info!("Recovered to parent directory: {:?}", parent_path);
+                return;
+            }
+        }
+        
+        // Last resort: go to home directory
+        if let Ok(home) = std::env::var("HOME") {
+            let home_path = PathBuf::from(home);
+            if self.try_navigate_to_directory(&home_path) {
+                info!("Recovered to home directory: {:?}", home_path);
+                return;
+            }
+        }
+        
+        // Ultimate fallback: current directory
+        if let Ok(current) = std::env::current_dir() {
+            if self.try_navigate_to_directory(&current) {
+                info!("Recovered to current directory: {:?}", current);
+                return;
+            }
+        }
+        
+        error!("Unable to recover from directory navigation error");
     }
 
     pub fn update(&mut self) {
@@ -212,6 +350,7 @@ impl App {
         for (_, process) in self.system.processes().iter().take(MAX_PROCESSES) {
             self.cached_processes.push(CachedProcess {
                 name: process.name().to_string_lossy().to_string(),
+                pid: process.pid().as_u32(),
                 cpu_usage: process.cpu_usage(),
                 memory: process.memory(),
             });
@@ -246,7 +385,13 @@ impl App {
 
         match key {
             KeyCode::Char('q') | KeyCode::Esc => {
-                self.should_quit = true;
+                if self.show_modal {
+                    self.hide_modal();
+                } else if self.show_help {
+                    self.show_help = false;
+                } else {
+                    self.should_quit = true;
+                }
             }
             KeyCode::Left | KeyCode::Char('h') => {
                 self.select_previous_panel();
@@ -382,25 +527,56 @@ impl App {
                 // Force refresh with rate limiting
                 if self.last_manual_refresh.elapsed() >= MANUAL_REFRESH_COOLDOWN {
                     self.system.refresh_all();
-                    let (dir_entries, dir_entry_paths) = Self::read_directory(&self.current_dir);
-                    self.dir_entries = dir_entries;
-                    self.dir_entry_paths = dir_entry_paths;
+                    if self.selected_panel == Panel::FileExplorer {
+                        // For file explorer, try to refresh current directory or recover if it fails
+                        let current_dir = self.current_dir.clone();
+                        if !self.try_navigate_to_directory(&current_dir) {
+                            self.navigate_back_to_safe_directory();
+                        }
+                    }
                     self.last_manual_refresh = Instant::now();
                 }
             }
             KeyCode::Char('?') => {
                 self.show_help = true;
             }
+            KeyCode::Char('i') => {
+                if self.show_modal {
+                    // Close modal if already open
+                    self.hide_modal();
+                } else {
+                    // Show info modal based on current panel
+                    match self.selected_panel {
+                        Panel::ProcessManager => self.show_process_modal(),
+                        Panel::NetworkGraph => self.show_network_modal(),
+                        Panel::SystemMonitor | Panel::SystemStatus => self.show_system_modal(),
+                        Panel::FileExplorer => self.show_file_modal(),
+                    }
+                }
+            }
+            KeyCode::Char('b') => {
+                // Navigate back in directory history
+                if self.selected_panel == Panel::FileExplorer && self.directory_history.len() > 1 {
+                    // Go back to the previous directory in history
+                    let current_index = self.directory_history.iter()
+                        .position(|path| path == &self.current_dir)
+                        .unwrap_or(0);
+                    
+                    if current_index > 0 {
+                        let prev_path = self.directory_history[current_index - 1].clone();
+                        if !self.try_navigate_to_directory(&prev_path) {
+                            self.navigate_back_to_safe_directory();
+                        }
+                    }
+                }
+            }
             KeyCode::Backspace => {
                 // Go up one directory (same as selecting "..")
                 if self.selected_panel == Panel::FileExplorer { // File browser panel
                     if let Some(parent) = self.current_dir.parent() {
-                        self.current_dir = parent.to_path_buf();
-                        let (dir_entries, dir_entry_paths) = Self::read_directory(&self.current_dir);
-                        self.dir_entries = dir_entries;
-                        self.dir_entry_paths = dir_entry_paths;
-                        self.selected_file = 0;
-                        self.file_list_state.select(Some(0));
+                        if !self.try_navigate_to_directory(&parent.to_path_buf()) {
+                            self.navigate_back_to_safe_directory();
+                        }
                     }
                 }
             }
@@ -416,23 +592,26 @@ impl App {
         let selected_item = &self.dir_entries[self.selected_file];
         let selected_path = &self.dir_entry_paths[self.selected_file];
         
+        // Check if we're trying to navigate to an error state
+        if selected_item.starts_with("<Error:") {
+            warn!("Attempting to navigate to error state, attempting recovery");
+            self.navigate_back_to_safe_directory();
+            return;
+        }
+        
         if selected_item == ".." {
             // Go up one directory using the stored parent path
-            self.current_dir = selected_path.clone();
-            let (dir_entries, dir_entry_paths) = Self::read_directory(&self.current_dir);
-            self.dir_entries = dir_entries;
-            self.dir_entry_paths = dir_entry_paths;
-            self.selected_file = 0;
-            self.file_list_state.select(Some(0));
+            let target_path = selected_path.clone();
+            if !self.try_navigate_to_directory(&target_path) {
+                self.navigate_back_to_safe_directory();
+            }
         } else if selected_item.starts_with("📁") {
             // Enter directory using the stored original path
             if selected_path.is_dir() {
-                self.current_dir = selected_path.clone();
-                let (dir_entries, dir_entry_paths) = Self::read_directory(&self.current_dir);
-                self.dir_entries = dir_entries;
-                self.dir_entry_paths = dir_entry_paths;
-                self.selected_file = 0;
-                self.file_list_state.select(Some(0));
+                let target_path = selected_path.clone();
+                if !self.try_navigate_to_directory(&target_path) {
+                    self.navigate_back_to_safe_directory();
+                }
             }
         }
         // Files are not opened - this could be a future feature
@@ -452,6 +631,152 @@ impl App {
             current_index - 1
         };
         self.selected_panel = Panel::from_index(prev_index).unwrap_or(Panel::SystemMonitor);
+    }
+
+    fn show_process_modal(&mut self) {
+        if self.selected_panel == Panel::ProcessManager && !self.cached_processes.is_empty() {
+            let selected_process = &self.cached_processes[self.selected_process];
+            if let Some(process) = self.system.process(sysinfo::Pid::from_u32(selected_process.pid)) {
+                self.modal_data = ModalData::ProcessDetails {
+                    name: selected_process.name.clone(),
+                    pid: selected_process.pid,
+                    cpu_usage: selected_process.cpu_usage,
+                    memory_usage: selected_process.memory,
+                    status: process.status().to_string(),
+                    cmd: process.cmd().join(std::ffi::OsStr::new(" ")).to_string_lossy().to_string(),
+                };
+                self.modal_type = ModalType::ProcessDetails;
+                self.show_modal = true;
+            }
+        }
+    }
+
+    fn show_network_modal(&mut self) {
+        if self.selected_panel == Panel::NetworkGraph && !self.cached_networks.is_empty() {
+            let selected_network = &self.cached_networks[self.selected_network];
+            let _network_data = self.networks.get(&selected_network.name).unwrap();
+            
+            // Calculate current rates from network history
+            let (rx_rate, tx_rate) = if !self.network_history.rx_rates.is_empty() {
+                (
+                    *self.network_history.rx_rates.back().unwrap_or(&0),
+                    *self.network_history.tx_rates.back().unwrap_or(&0),
+                )
+            } else {
+                (0, 0)
+            };
+
+            self.modal_data = ModalData::NetworkDetails {
+                name: selected_network.name.clone(),
+                total_received: selected_network.total_received,
+                total_transmitted: selected_network.total_transmitted,
+                received_rate: rx_rate,
+                transmitted_rate: tx_rate,
+            };
+            self.modal_type = ModalType::NetworkDetails;
+            self.show_modal = true;
+        }
+    }
+
+    fn show_system_modal(&mut self) {
+        self.modal_data = ModalData::SystemDetails {
+            hostname: sysinfo::System::host_name().unwrap_or_else(|| "Unknown".to_string()),
+            os_name: sysinfo::System::name().unwrap_or_else(|| "Unknown".to_string()),
+            os_version: sysinfo::System::os_version().unwrap_or_else(|| "Unknown".to_string()),
+            kernel_version: sysinfo::System::kernel_version().unwrap_or_else(|| "Unknown".to_string()),
+            cpu_count: self.system.cpus().len(),
+            total_memory: self.system.total_memory(),
+            uptime: sysinfo::System::uptime(),
+        };
+        self.modal_type = ModalType::SystemDetails;
+        self.show_modal = true;
+    }
+
+    fn show_file_modal(&mut self) {
+        if self.selected_file >= self.dir_entries.len() || self.selected_file >= self.dir_entry_paths.len() {
+            return;
+        }
+        
+        let selected_item = &self.dir_entries[self.selected_file];
+        let selected_path = &self.dir_entry_paths[self.selected_file];
+        
+        if selected_item == ".." || selected_item.starts_with("<Error:") {
+            return; // Don't show info for parent directory or error items
+        }
+        
+        // Check if this directory is a mount point - if so, show disk details
+        if selected_path.is_dir() {
+            // Look for a disk that matches this mount point
+            for disk in &self.disks {
+                if disk.mount_point() == selected_path {
+                    self.modal_data = ModalData::DiskDetails {
+                        name: disk.name().to_string_lossy().to_string(),
+                        mount_point: disk.mount_point().to_string_lossy().to_string(),
+                        total_space: disk.total_space(),
+                        available_space: disk.available_space(),
+                        file_system: disk.file_system().to_string_lossy().to_string(),
+                    };
+                    self.modal_type = ModalType::DiskDetails;
+                    self.show_modal = true;
+                    return;
+                }
+            }
+        }
+        
+        // Get file metadata for regular files/directories
+        if let Ok(metadata) = std::fs::metadata(selected_path) {
+            let file_size = metadata.len();
+            let is_dir = metadata.is_dir();
+            let permissions = format!("{:o}", metadata.permissions().mode() & 0o777);
+            
+            // Get file name without emoji prefix
+            let clean_name = selected_item
+                .trim_start_matches("📁 ")
+                .trim_start_matches("📄 ")
+                .to_string();
+            
+            let content = if is_dir {
+                format!(
+                    "Name: {}\n\
+                    Type: Directory\n\
+                    Size: {} items\n\
+                    Permissions: {}\n\
+                    Path: {}",
+                    clean_name,
+                    "N/A", // Directory item count would require reading the directory
+                    permissions,
+                    selected_path.display()
+                )
+            } else {
+                format!(
+                    "Name: {}\n\
+                    Type: File\n\
+                    Size: {}\n\
+                    Permissions: {}\n\
+                    Path: {}",
+                    clean_name,
+                    crate::utils::format_memory_size(file_size),
+                    permissions,
+                    selected_path.display()
+                )
+            };
+            
+            self.modal_data = ModalData::SystemDetails {
+                hostname: format!("File Info: {}", clean_name),
+                os_name: content,
+                os_version: String::new(),
+                kernel_version: String::new(),
+                cpu_count: 0,
+                total_memory: 0,
+                uptime: 0,
+            };
+            self.modal_type = ModalType::SystemDetails;
+            self.show_modal = true;
+        }
+    }
+
+    fn hide_modal(&mut self) {
+        self.show_modal = false;
     }
 
     pub fn render_header(&self, frame: &mut Frame, area: Rect) {

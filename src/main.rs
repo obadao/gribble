@@ -13,7 +13,7 @@ mod ui;
 mod utils;
 
 use app::App;
-use ui::{render_help, render_system_info, render_clock, render_tasks, render_file_browser, render_network_graph};
+use ui::{render_help, render_system_info, render_clock, render_tasks, render_file_browser, render_network_graph, modal::render_modal};
 
 fn main() -> Result<()> {
     color_eyre::install()?;
@@ -107,4 +107,7 @@ fn render(app: &App, frame: &mut Frame) {
 
     // Footer
     app.render_footer(frame, main_layout[2]);
+
+    // Render modal if shown
+    render_modal(app, frame, frame.area());
 }

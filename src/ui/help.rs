@@ -16,7 +16,9 @@ NAVIGATION:
   Home/End - Jump to first/last item in lists
   Enter    - Navigate directories (File Browser)
   Backspace- Go up one directory (File Browser)
-  r        - Refresh all data
+  b        - Go back in directory history (File Browser)
+  i        - Toggle detailed information modal
+  r        - Refresh all data (rate limited)
   ?        - Show/hide this help
   q / Esc  - Quit
 
